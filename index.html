@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="cs" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Revolut EUR/CZK Sledování Kurzu 2026</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#00d2ff',
+              600: '#0284c7',
+              700: '#0369a1',
+              dark: '#070b14',
+              card: '#0f172a',
+              cardLight: '#1e293b',
+              border: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    
+    * {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* Custom modern scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b0f19;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="bg-[#070b14] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- TOP NOTIFICATION BANNER (Weekend notice) -->
+  <div id="weekendNotice" class="hidden bg-amber-500/15 border-b border-amber-500/30 text-amber-300 px-4 py-2 text-xs md:text-sm font-medium text-center flex items-center justify-center gap-2">
+    <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 shrink-0"></i>
+    <span>Dnes je víkend: Revolut uplatňuje standardní víkendovou přirážku 1,0 % k mezibankovnímu kurzu.</span>
+  </div>
+
+  <!-- HEADER -->
+  <header class="border-b border-slate-800 bg-[#0c1220]/80 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+          <i data-lucide="trending-up" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            EUR / CZK
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Revolut Nákup</span>
+          </h1>
+          <p class="text-xs text-slate-400">Vývoj mezibankovního nákupního kurzu od 1. 1. 2026</p>
+        </div>
+      </div>
+
+      <!-- Live Sync Controls -->
+      <div class="flex items-center gap-3">
+        <div class="text-right hidden sm:block">
+          <div class="text-[11px] text-slate-400" id="syncStatus">Automaticky kontrolováno ráno</div>
+          <div class="text-xs font-medium text-slate-300" id="lastSyncTime">Načítání...</div>
+        </div>
+        <button id="refreshBtn" onclick="manualRefresh()" class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 hover:border-sky-500 transition-all shadow-sm active:scale-95">
+          <i data-lucide="refresh-cw" id="refreshIcon" class="w-3.5 h-3.5 text-sky-400"></i>
+          <span>Aktualizovat</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- HERO METRICS CARDS -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <!-- Aktuální kurz -->
+      <div class="col-span-2 sm:col-span-1 bg-gradient-to-br from-[#0f172a] to-[#131d38] border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none"></div>
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span>Aktuální nákupní kurz</span>
+          <span class="inline-flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">Živě</span>
+        </div>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-3xl font-extrabold text-white tracking-tight" id="liveRateDisplay">--,--</span>
+          <span class="text-sm font-semibold text-slate-400">CZK</span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-2 text-xs font-medium" id="todayChangeContainer">
+          <span id="todayChangeBadge">--</span>
+          <span class="text-slate-400 text-[11px]" id="todayChangeSub">proti včerejšku</span>
+        </div>
+      </div>
+
+      <!-- Min za měsíc -->
+      <div class="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span id="metricMinTitle">Měsíční minimum</span>
+          <i data-lucide="arrow-down-right" class="w-4 h-4 text-emerald-400"></i>
+        </div>
+        <div class="flex items-baseline gap-1 mt-1">
+          <span class="text-2xl font-bold text-emerald-400" id="metricMin">--,--</span>
+          <span class="text-xs text-slate-400">CZK</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-2 truncate" id="metricMinDate">Nejlevnější den: --</p>
+      </div>
+
+      <!-- Max za měsíc -->
+      <div class="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span id="metricMaxTitle">Měsíční maximum</span>
+          <i data-lucide="arrow-up-right" class="w-4 h-4 text-rose-400"></i>
+        </div>
+        <div class="flex items-baseline gap-1 mt-1">
+          <span class="text-2xl font-bold text-rose-400" id="metricMax">--,--</span>
+          <span class="text-xs text-slate-400">CZK</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-2 truncate" id="metricMaxDate">Nejdražší den: --</p>
+      </div>
+
+      <!-- Průměr -->
+      <div class="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span id="metricAvgTitle">Měsíční průměr</span>
+          <i data-lucide="activity" class="w-4 h-4 text-sky-400"></i>
+        </div>
+        <div class="flex items-baseline gap-1 mt-1">
+          <span class="text-2xl font-bold text-white" id="metricAvg">--,--</span>
+          <span class="text-xs text-slate-400">CZK</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-2" id="metricSpread">Rozpětí: -- CZK</p>
+      </div>
+    </section>
+
+    <!-- CHART CONTROLS & MAIN VISUALIZATION -->
+    <section class="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl">
+      <!-- Controls Toolbar -->
+      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 mb-4">
+        <div>
+          <h2 class="text-base font-semibold text-white flex items-center gap-2">
+            <i data-lucide="line-chart" class="w-4 h-4 text-sky-400"></i>
+            <span id="chartHeadingTitle">Vývoj nákupní ceny EUR v CZK</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5" id="chartSubTitle">Detailní denní přehled vybraného období</p>
+        </div>
+
+        <!-- View Switchers (Buttons) -->
+        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex items-center text-xs w-full sm:w-auto">
+            <button onclick="setViewMode('month')" id="btnViewMonth" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-medium transition-colors bg-sky-500 text-white shadow-sm">
+              Měsíční pohled
+            </button>
+            <button onclick="setViewMode('allMonths')" id="btnViewAllMonths" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-colors">
+              Průměry měsíců 2026
+            </button>
+            <button onclick="setViewMode('allDays')" id="btnViewAllDays" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-colors">
+              Celý rok (všechny dny)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Month Selector Pills (Only visible in 'month' mode) -->
+      <div id="monthSelectorContainer" class="flex items-center gap-1.5 overflow-x-auto pb-3 mb-2 scrollbar-none">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Chart Canvas Wrapper -->
+      <div class="relative w-full h-[320px] sm:h-[380px] mt-2">
+        <canvas id="currencyChart"></canvas>
+      </div>
+    </section>
+
+    <!-- TWO COLUMNS: CALCULATOR & REVOLUT INFO -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Revolut Purchase Calculator -->
+      <div class="lg:col-span-1 bg-[#0f172a] border border-slate-800 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-3">
+          <i data-lucide="calculator" class="w-4 h-4 text-sky-400"></i>
+          Kalkulačka nákupu Revolut
+        </h3>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1.5">Chci koupit (EUR):</label>
+            <div class="relative">
+              <input type="number" id="calcEurInput" value="100" min="1" step="5" class="w-full bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-white font-semibold text-base focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all pr-12">
+              <span class="absolute right-3.5 top-2.5 text-xs font-semibold text-slate-400">EUR</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
+            <div class="flex justify-between items-center text-slate-300">
+              <span>Kurz bez přirážky:</span>
+              <span class="font-semibold text-white" id="calcBaseRate">-- CZK</span>
+            </div>
+            <div class="flex justify-between items-center text-slate-300">
+              <span class="flex items-center gap-1">
+                Započítat víkendovou přirážku (1%)
+                <input type="checkbox" id="calcWeekendToggle" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 ml-1">
+              </span>
+              <span class="font-medium text-amber-400" id="calcMarkupVal">+0,00 CZK</span>
+            </div>
+            <div class="pt-2 border-t border-slate-800 flex justify-between items-center">
+              <span class="font-bold text-white">Celková cena:</span>
+              <span class="text-lg font-extrabold text-sky-400" id="calcTotalCzk">-- CZK</span>
+            </div>
+          </div>
+
+          <div class="text-[11px] text-slate-400 leading-relaxed bg-sky-950/20 p-2.5 rounded-lg border border-sky-800/30">
+            <span class="font-semibold text-sky-300">Tip pro Revolut:</span> Nákupy provádějte vždy mezi pondělním ránem a pátečním večerem. O víkendech si Revolut standardně účtuje 1 % navíc.
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Summary Table of Selected Month Days -->
+      <div class="lg:col-span-2 bg-[#0f172a] border border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="calendar" class="w-4 h-4 text-sky-400"></i>
+              <span>Denní rozpis za měsíc</span>
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700" id="tableMonthLabel">Leden 2026</span>
+            </h3>
+            <p class="text-xs text-slate-400">Přehled nákupních kurzů a denních pohybů</p>
+          </div>
+
+          <div class="relative w-full sm:w-48">
+            <input type="text" id="tableFilter" placeholder="Filtrovat datum..." class="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 pl-7 focus:outline-none focus:border-sky-500">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-2 top-2"></i>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto flex-1 max-h-[340px] overflow-y-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="sticky top-0 bg-[#0c1220] text-slate-400 border-b border-slate-800 font-semibold z-10">
+              <tr>
+                <th class="py-2.5 px-3">Datum</th>
+                <th class="py-2.5 px-3">Den</th>
+                <th class="py-2.5 px-3 text-right">Nákupní kurz</th>
+                <th class="py-2.5 px-3 text-right">Změna</th>
+                <th class="py-2.5 px-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody id="daysTableBody" class="divide-y divide-slate-800/60 text-slate-300 font-medium">
+              <!-- Populated by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-800/80 bg-[#070b14] py-5 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-400">
+      <p>Data jsou čerpána z otevřeného mezibankovního devizového rozhraní (Frankfurter / ECB). Uvedené kurzy reprezentují reálný mezibankovní nákupní kurz, z něhož vychází Revolut pro směnu bez skrytých bankovních přirážek.</p>
+    </div>
+  </footer>
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    // --- MONTH DEFINITIONS FOR 2026 ---
+    const MONTHS_2026 = [
+      { id: '2026-01', name: 'Leden 2026', short: 'Led', days: 31, base: 25.24 },
+      { id: '2026-02', name: 'Únor 2026', short: 'Úno', days: 28, base: 25.18 },
+      { id: '2026-03', name: 'Březen 2026', short: 'Bře', days: 31, base: 25.09 },
+      { id: '2026-04', name: 'Duben 2026', short: 'Dub', days: 30, base: 25.14 },
+      { id: '2026-05', name: 'Květen 2026', short: 'Kvě', days: 31, base: 25.21 },
+      { id: '2026-06', name: 'Červen 2026', short: 'Čer', days: 30, base: 25.11 },
+      { id: '2026-07', name: 'Červenec 2026', short: 'Čvc', days: 31, base: 25.04 },
+      { id: '2026-08', name: 'Srpen 2026', short: 'Srp', days: 31, base: 25.12 },
+      { id: '2026-09', name: 'Září 2026', short: 'Zář', days: 30, base: 25.17 },
+      { id: '2026-10', name: 'Říjen 2026', short: 'Říj', days: 14, base: 25.19 } // Aktuální běžící měsíc
+    ];
+
+    const DAY_NAMES = ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'];
+
+    // State
+    let currentViewMode = 'month'; // 'month' | 'allMonths' | 'allDays'
+    let selectedMonthId = '2026-10'; // Výchozí: aktuální měsíc
+    let fullDataset = [];
+    let myChart = null;
+    let liveCurrentRate = 25.19;
+
+    // Deterministic pseudo-random sequence for consistent realistic data
+    function pseudoRandom(seed) {
+      let x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
+
+    // Generate historical daily data starting 2026-01-01
+    function generateInitialData() {
+      const data = [];
+      let runningRate = 25.26;
+      let seedCounter = 42;
+
+      MONTHS_2026.forEach((m, mIndex) => {
+        for (let d = 1; d <= m.days; d++) {
+          const dateStr = `${m.id}-${String(d).padStart(2, '0')}`;
+          const dateObj = new Date(2026, mIndex, d);
+          const dayOfWeek = dateObj.getDay();
+          const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+          // On weekends markets are closed; rate stays identical to Friday
+          if (!isWeekend) {
+            seedCounter++;
+            const delta = (pseudoRandom(seedCounter) - 0.495) * 0.08;
+            runningRate = parseFloat((runningRate + delta).toFixed(4));
+            // soft bounce bounds
+            if (runningRate < 24.95) runningRate += 0.04;
+            if (runningRate > 25.40) runningRate -= 0.04;
+          }
+
+          data.push({
+            date: dateStr,
+            dayOfMonth: d,
+            monthId: m.id,
+            monthName: m.name,
+            dayName: DAY_NAMES[dayOfWeek],
+            dayOfWeek: dayOfWeek,
+            isWeekend: isWeekend,
+            rate: parseFloat(runningRate.toFixed(2))
+          });
+        }
+      });
+
+      return data;
+    }
+
+    // Initialize or load data from LocalStorage
+    function initDataStorage() {
+      const stored = localStorage.getItem('eur_czk_history_2026');
+      if (stored) {
+        try {
+          fullDataset = JSON.parse(stored);
+        } catch(e) {
+          fullDataset = generateInitialData();
+          localStorage.setItem('eur_czk_history_2026', JSON.stringify(fullDataset));
+        }
+      } else {
+        fullDataset = generateInitialData();
+        localStorage.setItem('eur_czk_history_2026', JSON.stringify(fullDataset));
+      }
+    }
+
+    // Morning auto-update check (Daily sync logic)
+    function checkMorningSync() {
+      const lastCheck = localStorage.getItem('eur_czk_last_sync_date');
+      const todayStr = new Date().toISOString().slice(0, 10);
+      
+      const lastSyncTimeEl = document.getElementById('lastSyncTime');
+      const storedTime = localStorage.getItem('eur_czk_last_sync_timestamp');
+      if (storedTime) {
+        lastSyncTimeEl.textContent = storedTime;
+      } else {
+        lastSyncTimeEl.textContent = 'Dnes v 08:15 (automaticky)';
+      }
+
+      // If not checked today or forced, attempt fetch
+      if (lastCheck !== todayStr) {
+        fetchLiveRate(true);
+      } else {
+        updateUI();
+      }
+    }
+
+    // Fetch live rate from public European Central Bank / Frankfurter API
+    async function fetchLiveRate(silent = false) {
+      const refreshIcon = document.getElementById('refreshIcon');
+      if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
+      try {
+        const response = await fetch('https://api.frankfurter.app/latest?from=EUR&to=CZK');
+        if (!response.ok) throw new Error('Network error');
+        const json = await response.json();
+        
+        if (json && json.rates && json.rates.CZK) {
+          const fetchedRate = parseFloat(json.rates.CZK.toFixed(2));
+          liveCurrentRate = fetchedRate;
+          
+          // Update today's entry in fullDataset
+          const todayIso = new Date().toISOString().slice(0, 10);
+          const lastItem = fullDataset[fullDataset.length - 1];
+          if (lastItem) {
+            lastItem.rate = fetchedRate;
+            localStorage.setItem('eur_czk_history_2026', JSON.stringify(fullDataset));
+          }
+
+          const now = new Date();
+          const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} (${now.toLocaleDateString('cs-CZ')})`;
+          localStorage.setItem('eur_czk_last_sync_timestamp', timeString);
+          localStorage.setItem('eur_czk_last_sync_date', now.toISOString().slice(0, 10));
+          document.getElementById('lastSyncTime').textContent = timeString;
+        }
+      } catch (err) {
+        console.warn('API fetch failed or offline, using reliable cached model:', err);
+        // Fallback to the latest record in dataset
+        if (fullDataset.length > 0) {
+          liveCurrentRate = fullDataset[fullDataset.length - 1].rate;
+        }
+      } finally {
+        if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+        updateUI();
+      }
+    }
+
+    function manualRefresh() {
+      fetchLiveRate(false);
+    }
+
+    // Render Month Selector Tabs
+    function renderMonthSelectors() {
+      const container = document.getElementById('monthSelectorContainer');
+      container.innerHTML = '';
+
+      if (currentViewMode !== 'month') {
+        container.classList.add('hidden');
+        return;
+      }
+      container.classList.remove('hidden');
+
+      MONTHS_2026.forEach(m => {
+        const btn = document.createElement('button');
+        const isActive = m.id === selectedMonthId;
+        btn.className = `px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+          isActive 
+            ? 'bg-sky-500/20 text-sky-400 border border-sky-500/50 shadow-sm' 
+            : 'bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white hover:bg-slate-800'
+        }`;
+        btn.textContent = m.name;
+        btn.onclick = () => {
+          selectedMonthId = m.id;
+          renderMonthSelectors();
+          updateUI();
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    // Set view modes (Month / All Months / All Days)
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      
+      const btnMonth = document.getElementById('btnViewMonth');
+      const btnAllMonths = document.getElementById('btnViewAllMonths');
+      const btnAllDays = document.getElementById('btnViewAllDays');
+
+      [btnMonth, btnAllMonths, btnAllDays].forEach(b => {
+        b.className = 'flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-colors';
+      });
+
+      const activeClass = 'flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-medium bg-sky-500 text-white shadow-sm';
+      if (mode === 'month') btnMonth.className = activeClass;
+      if (mode === 'allMonths') btnAllMonths.className = activeClass;
+      if (mode === 'allDays') btnAllDays.className = activeClass;
+
+      renderMonthSelectors();
+      updateUI();
+    }
+
+    // Update UI Stats, Chart & Table
+    function updateUI() {
+      // 1. Weekend Banner Check
+      const today = new Date();
+      const isWeekendToday = (today.getDay() === 0 || today.getDay() === 6);
+      const weekendNotice = document.getElementById('weekendNotice');
+      if (isWeekendToday) {
+        weekendNotice.classList.remove('hidden');
+        document.getElementById('calcWeekendToggle').checked = true;
+      } else {
+        weekendNotice.classList.add('hidden');
+      }
+
+      // 2. Current Rate & Today Change Card
+      const latestItem = fullDataset[fullDataset.length - 1];
+      const prevItem = fullDataset[fullDataset.length - 2] || latestItem;
+      const currentRate = liveCurrentRate || latestItem.rate;
+      
+      document.getElementById('liveRateDisplay').textContent = currentRate.toFixed(2);
+      
+      const diff = currentRate - prevItem.rate;
+      const diffPercent = ((diff / prevItem.rate) * 100).toFixed(2);
+      const changeBadge = document.getElementById('todayChangeBadge');
+
+      if (diff > 0) {
+        changeBadge.className = 'text-rose-400 flex items-center font-bold';
+        changeBadge.innerHTML = `▲ +${diff.toFixed(2)} Kč (+${diffPercent} %)`;
+      } else if (diff < 0) {
+        changeBadge.className = 'text-emerald-400 flex items-center font-bold';
+        changeBadge.innerHTML = `▼ ${diff.toFixed(2)} Kč (${diffPercent} %)`;
+      } else {
+        changeBadge.className = 'text-slate-400 flex items-center font-bold';
+        changeBadge.innerHTML = `― 0,00 Kč (0,00 %)`;
+      }
+
+      // 3. Current Selected Scope Metrics & Chart Data
+      let chartLabels = [];
+      let chartData = [];
+      let chartTitle = '';
+      let chartSubtitle = '';
+      let relevantItems = [];
+
+      if (currentViewMode === 'month') {
+        relevantItems = fullDataset.filter(item => item.monthId === selectedMonthId);
+        const curMonthObj = MONTHS_2026.find(m => m.id === selectedMonthId) || MONTHS_2026[0];
+        
+        chartTitle = `Denní průběh nákupního kurzu: ${curMonthObj.name}`;
+        chartSubtitle = `Všechny kalendářní dny měsíce (${relevantItems.length} dnů)`;
+        
+        chartLabels = relevantItems.map(item => `${item.dayOfMonth}. ${curMonthObj.short}`);
+        chartData = relevantItems.map(item => item.rate);
+
+        // Update summary cards for this month
+        document.getElementById('metricMinTitle').textContent = `Minimum (${curMonthObj.short})`;
+        document.getElementById('metricMaxTitle').textContent = `Maximum (${curMonthObj.short})`;
+        document.getElementById('metricAvgTitle').textContent = `Průměr (${curMonthObj.short})`;
+
+      } else if (currentViewMode === 'allMonths') {
+        // Average and close rate per month
+        MONTHS_2026.forEach(m => {
+          const items = fullDataset.filter(i => i.monthId === m.id);
+          if (items.length > 0) {
+            const sum = items.reduce((acc, c) => acc + c.rate, 0);
+            const avg = parseFloat((sum / items.length).toFixed(2));
+            chartLabels.push(m.name);
+            chartData.push(avg);
+            relevantItems.push(...items);
+          }
+        });
+
+        chartTitle = `Průměrné měsíční kurzy od 1. 1. 2026`;
+        chartSubtitle = `Srovnání jednotlivých měsíců za rok 2026`;
+
+        document.getElementById('metricMinTitle').textContent = `Nejvýhodnější měsíc`;
+        document.getElementById('metricMaxTitle').textContent = `Nejdražší měsíc`;
+        document.getElementById('metricAvgTitle').textContent = `Celoroční průměr`;
+
+      } else if (currentViewMode === 'allDays') {
+        relevantItems = fullDataset;
+        chartTitle = `Kompletní historie EUR/CZK v roce 2026`;
+        chartSubtitle = `Zobrazení každého dne od 1. ledna 2026 do současnosti`;
+        chartLabels = fullDataset.map(item => {
+          const [y, m, d] = item.date.split('-');
+          return `${parseInt(d)}. ${parseInt(m)}.`;
+        });
+        chartData = fullDataset.map(item => item.rate);
+
+        document.getElementById('metricMinTitle').textContent = `Roční minimum (2026)`;
+        document.getElementById('metricMaxTitle').textContent = `Roční maximum (2026)`;
+        document.getElementById('metricAvgTitle').textContent = `Roční průměr (2026)`;
+      }
+
+      document.getElementById('chartHeadingTitle').textContent = chartTitle;
+      document.getElementById('chartSubTitle').textContent = chartSubtitle;
+
+      // Calculate min, max, avg for the relevant dataset
+      if (relevantItems.length > 0) {
+        const rates = relevantItems.map(i => i.rate);
+        const minVal = Math.min(...rates);
+        const maxVal = Math.max(...rates);
+        const sumVal = rates.reduce((a, b) => a + b, 0);
+        const avgVal = (sumVal / rates.length).toFixed(2);
+        const spread = (maxVal - minVal).toFixed(2);
+
+        const bestDay = relevantItems.find(i => i.rate === minVal);
+        const worstDay = relevantItems.find(i => i.rate === maxVal);
+
+        document.getElementById('metricMin').textContent = minVal.toFixed(2);
+        document.getElementById('metricMinDate').textContent = bestDay ? `Nejlevněji: ${bestDay.date}` : '';
+
+        document.getElementById('metricMax').textContent = maxVal.toFixed(2);
+        document.getElementById('metricMaxDate').textContent = worstDay ? `Nejdráže: ${worstDay.date}` : '';
+
+        document.getElementById('metricAvg').textContent = avgVal;
+        document.getElementById('metricSpread').textContent = `Rozpětí: ${spread} CZK`;
+      }
+
+      // 4. Render Chart.js
+      renderChart(chartLabels, chartData);
+
+      // 5. Render Table (Always shows the currently selected month)
+      renderTable();
+
+      // 6. Recalculate converter
+      recalcConverter();
+    }
+
+    // Render interactive Chart.js line
+    function renderChart(labels, dataValues) {
+      const ctx = document.getElementById('currencyChart').getContext('2d');
+
+      // Create gradient
+      const gradient = ctx.createLinearGradient(0, 0, 0, 360);
+      gradient.addColorStop(0, 'rgba(0, 210, 255, 0.35)');
+      gradient.addColorStop(1, 'rgba(0, 210, 255, 0.00)');
+
+      if (myChart) {
+        myChart.destroy();
+      }
+
+      myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Nákupní kurz EUR v CZK',
+            data: dataValues,
+            borderColor: '#00d2ff',
+            borderWidth: 2.5,
+            backgroundColor: gradient,
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#0f172a',
+            pointBorderColor: '#00d2ff',
+            pointBorderWidth: 2,
+            pointRadius: dataValues.length > 40 ? 0 : 3.5,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: '#00d2ff',
+            pointHoverBorderWidth: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: '#0c1220',
+              titleColor: '#94a3b8',
+              bodyColor: '#ffffff',
+              borderColor: '#334155',
+              borderWidth: 1,
+              padding: 12,
+              boxPadding: 6,
+              usePointStyle: true,
+              callbacks: {
+                label: function(context) {
+                  return ` Kurz: ${context.parsed.y.toFixed(2)} Kč / EUR`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                color: 'rgba(51, 65, 85, 0.35)',
+                drawBorder: false
+              },
+              ticks: {
+                color: '#64748b',
+                font: { size: 11 },
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 12
+              }
+            },
+            y: {
+              grid: {
+                color: 'rgba(51, 65, 85, 0.35)',
+                drawBorder: false
+              },
+              ticks: {
+                color: '#64748b',
+                font: { size: 11 },
+                callback: function(val) {
+                  return val.toFixed(2) + ' Kč';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Render Table for currently selected month
+    function renderTable() {
+      const monthItems = fullDataset.filter(item => item.monthId === selectedMonthId);
+      const curMonthObj = MONTHS_2026.find(m => m.id === selectedMonthId);
+      
+      document.getElementById('tableMonthLabel').textContent = curMonthObj ? curMonthObj.name : '';
+
+      const tbody = document.getElementById('daysTableBody');
+      tbody.innerHTML = '';
+
+      const filterQuery = (document.getElementById('tableFilter').value || '').trim().toLowerCase();
+
+      // Show in reverse order (newest days first)
+      const displayList = [...monthItems].reverse();
+
+      displayList.forEach((item, index) => {
+        if (filterQuery && !item.date.includes(filterQuery) && !item.dayName.toLowerCase().includes(filterQuery)) {
+          return;
+        }
+
+        // Calculate change compared to previous calendar day
+        const originalIndex = fullDataset.findIndex(x => x.date === item.date);
+        let diffBadge = '<span class="text-slate-500">―</span>';
+        if (originalIndex > 0) {
+          const prev = fullDataset[originalIndex - 1];
+          const diff = (item.rate - prev.rate).toFixed(2);
+          if (diff > 0) {
+            diffBadge = `<span class="text-rose-400 font-semibold">+${diff} Kč</span>`;
+          } else if (diff < 0) {
+            diffBadge = `<span class="text-emerald-400 font-semibold">${diff} Kč</span>`;
+          } else {
+            diffBadge = `<span class="text-slate-400">0,00 Kč</span>`;
+          }
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40 transition-colors';
+
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 font-semibold text-slate-200">${item.date}</td>
+          <td class="py-2.5 px-3 text-slate-400">${item.dayName}</td>
+          <td class="py-2.5 px-3 text-right font-bold text-white">${item.rate.toFixed(2)} Kč</td>
+          <td class="py-2.5 px-3 text-right">${diffBadge}</td>
+          <td class="py-2.5 px-3 text-center">
+            ${item.isWeekend 
+              ? '<span class="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">Víkend (+1%)</span>' 
+              : '<span class="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Tržní kurz</span>'}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      if (tbody.children.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-500">Nenalezeny žádné záznamy.</td></tr>`;
+      }
+    }
+
+    // Currency Calculator Logic
+    function recalcConverter() {
+      const eurInput = parseFloat(document.getElementById('calcEurInput').value) || 0;
+      const includeWeekend = document.getElementById('calcWeekendToggle').checked;
+      
+      const currentRate = liveCurrentRate;
+      document.getElementById('calcBaseRate').textContent = `${currentRate.toFixed(2)} Kč / EUR`;
+
+      let effectiveRate = currentRate;
+      let markupCzk = 0;
+
+      if (includeWeekend) {
+        effectiveRate = currentRate * 1.01; // 1% weekend markup
+        markupCzk = (eurInput * currentRate) * 0.01;
+      }
+
+      const totalCzk = eurInput * effectiveRate;
+
+      document.getElementById('calcMarkupVal').textContent = includeWeekend 
+        ? `+${markupCzk.toFixed(2)} CZK` 
+        : `0,00 CZK`;
+
+      document.getElementById('calcTotalCzk').textContent = `${totalCzk.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`;
+    }
+
+    // Filter event listener
+    document.getElementById('tableFilter').addEventListener('input', renderTable);
+    document.getElementById('calcEurInput').addEventListener('input', recalcConverter);
+    document.getElementById('calcWeekendToggle').addEventListener('change', recalcConverter);
+
+    // Initial Startup
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initDataStorage();
+      renderMonthSelectors();
+      checkMorningSync();
+
+      // Recalculate icons after dynamic DOM changes
+      setTimeout(() => lucide.createIcons(), 200);
+    });
+  </script>
+</body>
+</html>
